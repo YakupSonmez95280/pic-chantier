@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import {
   format, startOfWeek, endOfWeek, eachDayOfInterval,
   startOfMonth, endOfMonth, isSameDay, addWeeks, subWeeks,
-  addMonths, subMonths, isToday
+  addMonths, subMonths, isToday, addDays
 } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
