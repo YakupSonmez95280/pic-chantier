@@ -13,11 +13,12 @@ import DemandesPage  from './pages/DemandesPage'
 export const AuthCtx = createContext(null)
 export const useAuth = () => useContext(AuthCtx)
 
-function Guard({ children, egOnly }) {
+function Guard({ children, egOnly, egOrRt }) {
   const { user, profile, loading } = useAuth()
   if (loading) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', color:'#9E9C97', fontSize:14 }}>Chargement…</div>
   if (!user) return <Navigate to="/login" replace />
   if (egOnly && profile?.role !== 'eg') return <Navigate to="/" replace />
+  if (egOrRt && !['eg','rt'].includes(profile?.role)) return <Navigate to="/" replace />
   return children
 }
 
@@ -53,7 +54,7 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="pic"      element={<PicPage />} />
             <Route path="planning" element={<PlanningPage />} />
-            <Route path="demandes" element={<Guard egOnly><DemandesPage /></Guard>} />
+            <Route path="demandes" element={<Guard egOrRt><DemandesPage /></Guard>} />
             <Route path="admin"    element={<Guard egOnly><AdminPage /></Guard>} />
           </Route>
         </Routes>

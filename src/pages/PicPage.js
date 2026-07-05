@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../App'
-import { Upload, Plus, Trash2, CheckCircle, X } from 'lucide-react'
+import { Upload, Plus, Trash2, CheckCircle, X, Maximize2, Minimize2 } from 'lucide-react'
 
 const LOTS_DEFAUT = ['Gros œuvre','Charpente / Couverture','Façade / Isolation','Électricité','Plomberie / CVC','Menuiseries extérieures','Menuiseries intérieures','Peinture / Revêtements','Carrelage / Sols','Serrurerie / Métallerie','Ascenseurs','Espaces verts','Autre']
 const CRENEAUX   = ['6h00–8h00','8h00–10h00','10h00–12h00','12h00–14h00','14h00–16h00','16h00–18h00']
@@ -195,6 +195,7 @@ export default function PicPage() {
   const [selectedZone, setSelectedZone] = useState(null)
   const [success, setSuccess]         = useState(false)
   const [uploading, setUploading]     = useState(false)
+  const [fullscreen, setFullscreen]   = useState(false)
   const containerRef = useRef(null)
   const imgRef       = useRef(null)
 
@@ -228,6 +229,12 @@ export default function PicPage() {
     window.addEventListener('resize', recalcScale)
     return () => window.removeEventListener('resize', recalcScale)
   }, [recalcScale])
+
+  useEffect(() => {
+    // recalc after fullscreen layout change
+    const t = setTimeout(recalcScale, 50)
+    return () => clearTimeout(t)
+  }, [fullscreen, recalcScale])
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]
@@ -325,23 +332,72 @@ export default function PicPage() {
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexWrap:'wrap', gap:10 }}>
         <h1 style={{ fontSize:20, fontWeight:700, letterSpacing:'-0.3px' }}>Plan d'installation de chantier</h1>
-        {isEG && (
-          <div style={{ display:'flex', gap:8 }}>
-            <label style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'var(--green)', color:'#fff', borderRadius:'var(--r)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-              <Upload size={14}/>
-              {uploading ? 'Upload…' : 'Changer le PIC'}
-              <input type="file" accept="image/*" onChange={handleUpload} style={{ display:'none' }}/>
-            </label>
-            {picUrl && (
-              <button
-                onClick={() => { setDrawMode(v => !v); setDrawRect(null); setNewZoneName('') }}
-                style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background: drawMode ? 'var(--green)' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--text)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                <Plus size={14}/>{drawMode ? '✏️ Dessinez une zone…' : 'Ajouter une zone'}
-              </button>
-            )}
-          </div>
-        )}
+        <div style={{ display:'flex', gap:8 }}>
+          {picUrl && (
+            <button
+              onClick={() => setFullscreen(v => !v)}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'var(--surface)', color:'var(--text)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+              {fullscreen ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}
+              {fullscreen ? 'Réduire' : 'Agrandir'}
+            </button>
+          )}
+          {isEG && (
+            <>
+              <label style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'var(--green)', color:'#fff', borderRadius:'var(--r)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                <Upload size={14}/>
+                {uploading ? 'Upload…' : 'Changer le PIC'}
+                <input type="file" accept="image/*" onChange={handleUpload} style={{ display:'none' }}/>
+              </label>
+              {picUrl && (
+                <button
+                  onClick={() => { setDrawMode(v => !v); setDrawRect(null); setNewZoneName('') }}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background: drawMode ? 'var(--green)' : 'var(--surface)', color: drawMode ? '#fff' : 'var(--text)', border:'1.5px solid var(--border)', borderRadius:'var(--r)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                  <Plus size={14}/>{drawMode ? '✏️ Dessinez une zone…' : 'Ajouter une zone'}
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
+
+      {fullscreen && (
+        <div
+          style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.92)', zIndex:300, display:'flex', flexDirection:'column', padding:16 }}
+          onClick={e => e.target === e.currentTarget && setFullscreen(false)}
+        >
+          <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:10 }}>
+            <button onClick={() => setFullscreen(false)}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', background:'#fff', border:'none', borderRadius:8, fontWeight:600, fontSize:13, cursor:'pointer' }}>
+              <Minimize2 size={14}/> Fermer
+            </button>
+          </div>
+          <div style={{ flex:1, overflow:'auto', display:'flex', alignItems:'flex-start', justifyContent:'center' }}>
+            <div
+              ref={fullscreen ? containerRef : null}
+              style={{ position:'relative', width:'min(95vw, 1400px)', userSelect:'none', cursor: drawMode ? 'crosshair' : 'default' }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+            >
+              {picUrl && (
+                <img src={picUrl} alt="PIC plein écran" onLoad={onImgLoad} style={{ width:'100%', display:'block', pointerEvents:'none', borderRadius:8 }}/>
+              )}
+              {zones.map(z => (
+                <ZoneBadge key={z.id} zone={z} scale={scale} onClick={handleZoneClick} isEG={isEG} onDelete={deleteZone}/>
+              ))}
+              {drawRect && drawRect.w > 5 && (
+                <div style={{
+                  position:'absolute',
+                  left: drawRect.x * scale, top: drawRect.y * scale,
+                  width: drawRect.w * scale, height: drawRect.h * scale,
+                  border:'2px dashed var(--green)', background:'rgba(26,107,69,0.12)',
+                  borderRadius:6, pointerEvents:'none'
+                }}/>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {success && (
         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 16px', background:'var(--green-l)', color:'var(--green-d)', borderRadius:10, marginBottom:14, fontWeight:500 }}>
@@ -363,7 +419,7 @@ export default function PicPage() {
       )}
 
       {/* Conteneur PIC */}
-      <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden' }}>
+      <div style={{ background:'var(--surface)', borderRadius:12, border:'1px solid var(--border)', overflow:'hidden', maxWidth:1100, margin:'0 auto' }}>
         {!picUrl ? (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:300, color:'var(--text3)', gap:12 }}>
             <Upload size={36} style={{ opacity:0.4 }}/>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../App'
 import { CheckCircle, XCircle, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 
 const STATUS = {
@@ -15,7 +16,7 @@ const FILTERS = [
   { k:'refusee',    l:'Refusées' },
 ]
 
-function Row({ d, onAction }) {
+function Row({ d, onAction, profile }) {
   const [open, setOpen]             = useState(false)
   const [motif, setMotif]           = useState('')
   const [showRefus, setShowRefus]   = useState(false)
@@ -24,9 +25,8 @@ function Row({ d, onAction }) {
 
   const update = async (statut, commentaire = null) => {
     setLoading(true)
-    await supabase.from('demandes').update({ statut, commentaire_eg: commentaire }).eq('id', d.id)
+    await supabase.from('demandes').update({ statut, commentaire_eg: commentaire, valide_par: profile.id }).eq('id', d.id)
 
-    // Email retour ST via Edge Function
     await supabase.functions.invoke('send-email', {
       body: { type: statut === 'validee' ? 'validation_st' : 'refus_st', demande: { ...d, commentaire_eg: commentaire } }
     }).catch(() => {})
@@ -43,6 +43,7 @@ function Row({ d, onAction }) {
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4, flexWrap:'wrap' }}>
             <span style={{ fontSize:11, fontFamily:'monospace', color:'var(--text3)' }}>#{d.id.slice(0,8)}</span>
             <span style={{ fontSize:12, fontWeight:600, padding:'3px 8px', borderRadius:99, background:sm.bg, color:sm.color }}>{sm.label}</span>
+            <span style={{ fontSize:11, fontWeight:600, padding:'2px 8px', borderRadius:99, background:'var(--surface2)', color:'var(--text2)' }}>{d.lot}</span>
             {d.statut === 'en_attente' && <span style={{ fontSize:11, fontWeight:600, padding:'2px 7px', borderRadius:99, background:'var(--amber-l)', color:'var(--amber)', display:'flex', alignItems:'center', gap:3 }}><AlertTriangle size={11}/>À traiter</span>}
           </div>
           <div style={{ fontSize:14, fontWeight:600 }}>{d.type_livraison}</div>
@@ -55,7 +56,6 @@ function Row({ d, onAction }) {
 
       {open && (
         <div style={{ padding:'0 16px 16px', borderTop:'1px solid var(--border)' }}>
-          {/* Tableau récapitulatif */}
           <div style={{ overflowX:'auto', marginTop:12 }}>
             <table style={{ width:'100%', fontSize:13, borderCollapse:'collapse' }}>
               <tbody>
@@ -117,12 +117,17 @@ function Row({ d, onAction }) {
 }
 
 export default function DemandesPage() {
+  const { profile } = useAuth()
+  const isEG = profile?.role === 'eg'
+  const isRT = profile?.role === 'rt'
   const [demandes, setDemandes] = useState([])
   const [filter, setFilter]     = useState('all')
   const [loading, setLoading]   = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
+    // RLS s'occupe déjà de filtrer : un RT ne voit que les demandes de ses lots assignés,
+    // un EG voit tout. On n'a pas besoin de filtre supplémentaire côté client.
     let q = supabase.from('demandes').select('*').order('created_at', { ascending: false })
     if (filter !== 'all') q = q.eq('statut', filter)
     const { data } = await q
@@ -136,11 +141,21 @@ export default function DemandesPage() {
 
   return (
     <div>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8, flexWrap:'wrap', gap:8 }}>
         <h1 style={{ fontSize:20, fontWeight:700, letterSpacing:'-0.3px' }}>
           Demandes{pending > 0 && <span style={{ marginLeft:8, fontSize:13, fontWeight:600, padding:'3px 9px', borderRadius:99, background:'var(--amber-l)', color:'var(--amber)' }}>{pending} en attente</span>}
         </h1>
       </div>
+      {isRT && (
+        <p style={{ fontSize:13, color:'var(--text2)', marginBottom:16 }}>
+          Vous voyez uniquement les demandes des lots qui vous sont assignés.
+        </p>
+      )}
+      {isEG && (
+        <p style={{ fontSize:13, color:'var(--text2)', marginBottom:16 }}>
+          Vue globale — toutes les demandes, tous lots confondus.
+        </p>
+      )}
 
       <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:10, marginBottom:14 }}>
         {FILTERS.map(f => (
@@ -159,7 +174,7 @@ export default function DemandesPage() {
         ? <p style={{ textAlign:'center', padding:40, color:'var(--text3)', fontSize:14 }}>Chargement…</p>
         : demandes.length === 0
           ? <p style={{ textAlign:'center', padding:40, color:'var(--text3)', fontSize:14 }}>Aucune demande</p>
-          : demandes.map(d => <Row key={d.id} d={d} onAction={load}/>)
+          : demandes.map(d => <Row key={d.id} d={d} onAction={load} profile={profile}/>)
       }
     </div>
   )
