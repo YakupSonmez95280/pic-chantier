@@ -39,14 +39,10 @@ function Row({ d, onAction, profile }) {
     }
     if (statut === 'validee' || statut === 'refusee' || statut === 'annulee') {
       const type = statut === 'validee' ? 'validation_st' : statut === 'refusee' ? 'refus_st' : 'annulation_st'
-      const { data: { session } } = await supabase.auth.getSession()
-      await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token || process.env.REACT_APP_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ type, demande: { ...d, commentaire_eg: commentaire, valide_par: profile.id } })
+      const emailPayload = { type, demande: { ...d, commentaire_eg: commentaire, valide_par: profile.id } }
+      supabase.functions.invoke('send-email', {
+        body: JSON.stringify(emailPayload),
+        headers: { 'Content-Type': 'application/json' }
       }).catch(err => console.error('Email error:', err))
     }
     setLoading(false); setShowRefus(false); onAction()

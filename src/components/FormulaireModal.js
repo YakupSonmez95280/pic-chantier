@@ -116,14 +116,10 @@ export default function FormulaireModal({ zone, lots, onClose, onSubmit }) {
     })
     if (err) { setError('Erreur : ' + err.message); setLoading(false); return }
 
-    const { data: { session } } = await supabase.auth.getSession()
-    await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-email`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session?.access_token || process.env.REACT_APP_SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ type: 'alerte_eg', demande: { zone_nom: zone.nom, ...form } })
+    const emailPayload = { type: 'alerte_eg', demande: { zone_nom: zone.nom, ...form } }
+    supabase.functions.invoke('send-email', {
+      body: JSON.stringify(emailPayload),
+      headers: { 'Content-Type': 'application/json' }
     }).catch(err => console.error('Email error:', err))
 
     setLoading(false)

@@ -110,8 +110,11 @@ async function getValideur(validePar?: string): Promise<{ email: string; nom: st
 
 serve(async (req) => {
   try {
-    const body = await req.json()
-    const { type, demande } = body
+    const text = await req.text()
+    if (!text || text.trim() === '') {
+      return new Response(JSON.stringify({ error: 'Empty body' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    }
+    const { type, demande } = JSON.parse(text)
 
     // ── ALERTE : nouvelle demande → RT ou EG ──────────────
     if (type === 'alerte_eg') {
