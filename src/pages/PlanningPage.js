@@ -18,6 +18,7 @@ const COLORS = [
 // ── Vue SEMAINE ──────────────────────────────────────────
 function VueSemaine({ demandes, weekStart, zoneColors, onSelect }) {
   const days = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 1 }) })
+    .filter(d => d.getDay() !== 0 && d.getDay() !== 6) // sans samedi (6) et dimanche (0)
 
   const demandesForSlot = (day, slot) =>
     demandes.filter(d =>
@@ -83,9 +84,10 @@ function VueMois({ demandes, month, zoneColors, onSelect }) {
           <div key={'e'+i} style={{ minHeight:70, borderRight:'0.5px solid var(--border)', borderBottom:'0.5px solid var(--border)', background:'var(--bg)', opacity:0.5 }}/>
         ))}
         {days.map((day, i) => {
-          const dayDels = demandes.filter(d => isSameDay(new Date(d.date_souhaitee + 'T12:00'), day))
+          const isWeekend = day.getDay() === 0 || day.getDay() === 6
+          const dayDels = isWeekend ? [] : demandes.filter(d => isSameDay(new Date(d.date_souhaitee + 'T12:00'), day))
           return (
-            <div key={i} style={{ minHeight:70, padding:'4px', borderRight:'0.5px solid var(--border)', borderBottom:'0.5px solid var(--border)', background: isToday(day) ? 'var(--green-l)' : 'white' }}>
+            <div key={i} style={{ minHeight:70, padding:'4px', borderRight:'0.5px solid var(--border)', borderBottom:'0.5px solid var(--border)', background: isToday(day) ? 'var(--green-l)' : isWeekend ? 'var(--surface2)' : 'white' }}>
               <div style={{ fontSize:11, fontWeight: isToday(day)?700:400, color: isToday(day)?'var(--green)':'var(--text3)', textAlign:'right', paddingRight:2, marginBottom:2 }}>
                 {format(day, 'd')}
               </div>
@@ -119,8 +121,9 @@ export default function PlanningPage() {
   const [exporting, setExporting] = useState(false)
   const tableRef = useRef(null)
 
+  const weekEnd = addDays(weekStart, 4) // vendredi
   const periodLabel = vue === 'semaine'
-    ? `Semaine du ${format(weekStart, 'd MMM', { locale: fr })} au ${format(endOfWeek(weekStart, { weekStartsOn:1 }), 'd MMM yyyy', { locale: fr })}`
+    ? `Semaine du ${format(weekStart, 'd MMM', { locale: fr })} au ${format(weekEnd, 'd MMM yyyy', { locale: fr })} (lun–ven)`
     : format(month, 'MMMM yyyy', { locale: fr })
 
   useEffect(() => {
@@ -151,8 +154,9 @@ export default function PlanningPage() {
   const exportPDF = async () => {
     setExporting(true)
     try {
-      // Génération HTML du planning semaine
+      // Génération HTML du planning semaine (sans week-end)
       const days = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn:1 }) })
+        .filter(d => d.getDay() !== 0 && d.getDay() !== 6)
       const numSemaine = format(weekStart, 'w')
       const debutStr = format(weekStart, 'dd/MM/yy', { locale: fr })
       const finStr   = format(endOfWeek(weekStart, { weekStartsOn:1 }), 'dd/MM/yy', { locale: fr })

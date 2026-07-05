@@ -37,9 +37,10 @@ function Row({ d, onAction, profile }) {
         await supabase.from('zones').update({ etat: 'libre' }).eq('id', d.zone_id)
       }
     }
-    if (statut === 'validee' || statut === 'refusee') {
+    if (statut === 'validee' || statut === 'refusee' || statut === 'annulee') {
+      const type = statut === 'validee' ? 'validation_st' : statut === 'refusee' ? 'refus_st' : 'annulation_st'
       await supabase.functions.invoke('send-email', {
-        body: { type: statut === 'validee' ? 'validation_st' : 'refus_st', demande: { ...d, commentaire_eg: commentaire } }
+        body: { type, demande: { ...d, commentaire_eg: commentaire, valide_par: profile.id } }
       }).catch(() => {})
     }
     setLoading(false); setShowRefus(false); onAction()

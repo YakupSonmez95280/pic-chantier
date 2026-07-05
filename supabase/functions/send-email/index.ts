@@ -1,138 +1,216 @@
 // supabase/functions/send-email/index.ts
-// Déployée via : supabase functions deploy send-email
-// Variables à configurer dans Supabase > Settings > Edge Functions > Secrets :
-//   RESEND_API_KEY  → votre clé Resend (resend.com, gratuit 100 emails/jour)
-//   EG_EMAIL        → email de l'entreprise générale (alerte de secours si aucun RT assigné)
-//   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY sont déjà injectées automatiquement par Supabase
+// Deploy: supabase functions deploy send-email
+// Secrets: RESEND_API_KEY, EG_EMAIL, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const RESEND_KEY = Deno.env.get('RESEND_API_KEY')!
 const EG_EMAIL   = Deno.env.get('EG_EMAIL')!
-const FROM       = 'PIC Chantier <noreply@resend.dev>'
 
 const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 )
 
-async function sendMail(to: string, subject: string, html: string) {
-  await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: FROM, to, subject, html }),
-  })
+// Expéditeur = email du validateur si fourni, sinon EG par défaut
+function getFrom(valideurEmail?: string) {
+  // Resend exige un domaine vérifié pour changer l'expéditeur.
+  // On met le mail du validateur dans le nom d'affichage et en Reply-To.
+  const nom = valideurEmail ? `PIC Chantier (${valideurEmail})` : 'PIC Chantier'
+  return { from: `${nom} <noreply@resend.dev>`, replyTo: valideurEmail || EG_EMAIL }
 }
 
+async function sendMail(to: string, subject: string, html: string, valideurEmail?: string) {
+  const { from, replyTo } = getFrom(valideurEmail)
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from, to, reply_to: replyTo, subject, html }),
+  })
+  if (!res.ok) console.error('Resend error:', await res.text())
+}
+
+// ── Tableau HTML récapitulatif ────────────────────────────
 function tableauDemande(d: any) {
+  const lignes = [
+    ['Entreprise',     d.entreprise],
+    ['Lot',            d.lot],
+    ['Demandeur',      `${d.prenom} ${d.nom}`],
+    ['Email',          d.email_demandeur],
+    ['Zone',           d.zone_nom],
+    ['Type livraison', d.type_livraison],
+    ['Date souhaitée', d.date_souhaitee],
+    ['Créneau',        d.creneau],
+    ['Quantité',       d.quantite],
+    ['Remarques',      d.notes || '—'],
+  ]
   return `
-  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">
+  <table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px;margin-top:8px">
+    <thead>
+      <tr style="background:#1a4c8b">
+        <th style="padding:10px 14px;color:#fff;text-align:left;font-size:13px;width:40%">Champ</th>
+        <th style="padding:10px 14px;color:#fff;text-align:left;font-size:13px">Valeur</th>
+      </tr>
+    </thead>
     <tbody>
-      ${[
-        ['Entreprise',    d.entreprise],
-        ['Lot',           d.lot],
-        ['Demandeur',     `${d.prenom} ${d.nom}`],
-        ['Email',         d.email_demandeur],
-        ['Zone',          d.zone_nom],
-        ['Type livraison',d.type_livraison],
-        ['Date souhaitée',d.date_souhaitee],
-        ['Créneau',       d.creneau],
-        ['Quantité',      d.quantite],
-        ['Remarques',     d.notes || '—'],
-      ].map(([k,v]) => `
-        <tr>
-          <td style="padding:8px 12px;background:#f5f4f0;font-weight:600;width:160px;border-bottom:1px solid #ddd">${k}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #ddd">${v}</td>
+      ${lignes.map(([k, v], i) => `
+        <tr style="background:${i % 2 === 0 ? '#f8f8f6' : '#ffffff'}">
+          <td style="padding:9px 14px;font-weight:600;color:#444;border-bottom:1px solid #e8e8e4;font-size:13px">${k}</td>
+          <td style="padding:9px 14px;color:#1a1916;border-bottom:1px solid #e8e8e4;font-size:13px">${v}</td>
         </tr>`).join('')}
     </tbody>
   </table>`
 }
 
-// Trouve l'email du Responsable de Travaux assigné au lot, sinon retourne l'email EG par défaut
-async function getDestinataireAlerte(lotNom: string): Promise<string> {
-  const { data: lot } = await supabaseAdmin
-    .from('lots')
-    .select('rt_id')
-    .eq('nom', lotNom)
-    .single()
+// ── Bandeau header email ──────────────────────────────────
+function header(titre: string, couleur: string, emoji: string) {
+  return `
+  <div style="background:${couleur};padding:20px 28px;border-radius:10px 10px 0 0">
+    <h1 style="color:#fff;font-size:20px;margin:0;font-family:Arial,sans-serif">${emoji} ${titre}</h1>
+    <p style="color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:13px;font-family:Arial,sans-serif">PIC Chantier — Gestion des livraisons</p>
+  </div>`
+}
 
+function wrapper(contenu: string) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:20px;background:#f4f3ef;font-family:Arial,sans-serif">
+  <div style="max-width:620px;margin:0 auto">
+    <div style="background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,0.08);overflow:hidden">
+      ${contenu}
+      <div style="padding:16px 28px;background:#f8f8f6;font-size:11px;color:#999;text-align:center;border-top:1px solid #eee">
+        Ce mail est généré automatiquement par PIC Chantier · Ne pas répondre directement à ce mail
+      </div>
+    </div>
+  </div>
+</body></html>`
+}
+
+// ── Trouver l'email du RT/EG responsable du lot ───────────
+async function getDestinataireAlerte(lotNom: string): Promise<{ email: string; nom: string }> {
+  const { data: lot } = await supabaseAdmin.from('lots').select('rt_id').eq('nom', lotNom).single()
   if (lot?.rt_id) {
-    const { data: rtProfile } = await supabaseAdmin
-      .from('profiles')
-      .select('email')
-      .eq('id', lot.rt_id)
-      .single()
-    if (rtProfile?.email) return rtProfile.email
+    const { data: rt } = await supabaseAdmin.from('profiles').select('email, prenom, nom').eq('id', lot.rt_id).single()
+    if (rt?.email) return { email: rt.email, nom: `${rt.prenom} ${rt.nom}` }
   }
-  return EG_EMAIL
+  return { email: EG_EMAIL, nom: 'Entreprise Générale' }
+}
+
+// ── Récupérer le profil du validateur ─────────────────────
+async function getValideur(validePar?: string): Promise<{ email: string; nom: string } | null> {
+  if (!validePar) return null
+  const { data } = await supabaseAdmin.from('profiles').select('email, prenom, nom').eq('id', validePar).single()
+  if (data) return { email: data.email, nom: `${data.prenom} ${data.nom}` }
+  return null
 }
 
 serve(async (req) => {
   const { type, demande } = await req.json()
 
-  // ── Alerte : nouvelle demande en attente → envoyée au RT du lot (ou à l'EG si aucun RT) ──
+  // ── ALERTE : nouvelle demande → RT ou EG ──────────────
   if (type === 'alerte_eg') {
-    const destinataire = await getDestinataireAlerte(demande.lot)
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-        <div style="background:#1A6B45;padding:20px 24px;border-radius:8px 8px 0 0">
-          <h1 style="color:#fff;font-size:20px;margin:0">🚛 Nouvelle demande de livraison</h1>
+    const dest = await getDestinataireAlerte(demande.lot)
+    const html = wrapper(`
+      ${header('Nouvelle demande de livraison', '#854F0B', '🚛')}
+      <div style="padding:24px 28px">
+        <p style="color:#444;margin:0 0 16px;font-size:14px">
+          Bonjour <strong>${dest.nom}</strong>,<br>
+          Une nouvelle demande de livraison vient d'être soumise pour le lot <strong>${demande.lot}</strong> et attend votre validation.
+        </p>
+        ${tableauDemande(demande)}
+        <div style="margin-top:20px;padding:14px 18px;background:#FDF0DC;border-left:4px solid #854F0B;border-radius:4px">
+          <strong style="color:#854F0B;font-size:13px">⏳ Action requise</strong>
+          <p style="color:#6b6860;margin:6px 0 0;font-size:12px">Connectez-vous à PIC Chantier pour valider ou refuser cette demande. Une fois validée, elle apparaîtra automatiquement dans le planning.</p>
         </div>
-        <div style="background:#fff;padding:24px;border:1px solid #ddd;border-top:none;border-radius:0 0 8px 8px">
-          <p style="color:#6b6860;margin:0 0 16px">Une nouvelle demande est en attente de validation pour le lot <strong>${demande.lot}</strong> :</p>
-          ${tableauDemande(demande)}
-          <div style="margin-top:20px;padding:14px 18px;background:#FDF0DC;border-left:4px solid #854F0B;border-radius:4px">
-            <strong style="color:#854F0B">⏳ Action requise</strong>
-            <p style="color:#6b6860;margin:6px 0 0;font-size:13px">Connectez-vous au site pour valider ou refuser cette demande. Une fois validée, elle sera automatiquement ajoutée au planning.</p>
-          </div>
-        </div>
-      </div>`
-    await sendMail(destinataire, `[PIC Chantier] Nouvelle demande – Lot ${demande.lot}`, html)
+      </div>
+    `)
+    await sendMail(dest.email, `[PIC Chantier] 🚛 Nouvelle demande – Lot ${demande.lot} – ${demande.entreprise}`, html)
   }
 
-  // ── Email ST : demande validée ───────────────────────
+  // ── VALIDATION → ST ───────────────────────────────────
   if (type === 'validation_st') {
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-        <div style="background:#1A6B45;padding:20px 24px;border-radius:8px 8px 0 0">
-          <h1 style="color:#fff;font-size:20px;margin:0">✅ Demande validée</h1>
+    const valideur = await getValideur(demande.valide_par)
+    const valideurNom = valideur?.nom || 'l\'entreprise générale'
+    const valideurEmail = valideur?.email
+    const html = wrapper(`
+      ${header('Demande de livraison validée', '#1A6B45', '✅')}
+      <div style="padding:24px 28px">
+        <p style="color:#444;margin:0 0 16px;font-size:14px">
+          Bonjour <strong>${demande.prenom} ${demande.nom}</strong>,<br>
+          Votre demande de livraison a été <strong style="color:#1A6B45">validée</strong> par ${valideurNom}.
+        </p>
+        ${tableauDemande(demande)}
+        <div style="margin-top:20px;padding:16px 18px;background:#D4EDDF;border-left:4px solid #1A6B45;border-radius:4px">
+          <strong style="color:#0F4A2F;font-size:13px">📅 Livraison confirmée</strong>
+          <p style="color:#0F4A2F;margin:8px 0 0;font-size:13px">
+            Le <strong>${demande.date_souhaitee}</strong> · Créneau <strong>${demande.creneau}</strong><br>
+            Zone : <strong>${demande.zone_nom}</strong><br>
+            Votre livraison est désormais inscrite au planning du chantier.
+          </p>
         </div>
-        <div style="background:#fff;padding:24px;border:1px solid #ddd;border-top:none;border-radius:0 0 8px 8px">
-          <p style="color:#333;margin:0 0 16px">Bonjour <strong>${demande.prenom} ${demande.nom}</strong>,</p>
-          <p style="color:#6b6860;margin:0 0 16px">Votre demande de livraison a été <strong style="color:#1A6B45">validée</strong>.</p>
-          ${tableauDemande(demande)}
-          <div style="margin-top:20px;padding:14px 18px;background:#D4EDDF;border-left:4px solid #1A6B45;border-radius:4px">
-            <strong style="color:#0F4A2F">📅 Confirmé</strong>
-            <p style="color:#0F4A2F;margin:6px 0 0;font-size:13px">
-              Livraison le <strong>${demande.date_souhaitee}</strong> créneau <strong>${demande.creneau}</strong> en <strong>${demande.zone_nom}</strong>. Elle est désormais inscrite au planning.
-            </p>
-          </div>
-        </div>
-      </div>`
-    await sendMail(demande.email_demandeur, `[PIC Chantier] ✅ Demande validée – ${demande.date_souhaitee}`, html)
+        <p style="color:#999;font-size:12px;margin-top:16px">
+          En cas de changement, contactez directement ${valideurNom}${valideurEmail ? ` à <a href="mailto:${valideurEmail}">${valideurEmail}</a>` : ''}.
+        </p>
+      </div>
+    `)
+    await sendMail(demande.email_demandeur, `[PIC Chantier] ✅ Livraison validée – ${demande.date_souhaitee} – ${demande.zone_nom}`, html, valideurEmail)
   }
 
-  // ── Email ST : demande refusée ───────────────────────
+  // ── REFUS → ST ────────────────────────────────────────
   if (type === 'refus_st') {
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-        <div style="background:#8B2020;padding:20px 24px;border-radius:8px 8px 0 0">
-          <h1 style="color:#fff;font-size:20px;margin:0">❌ Demande refusée</h1>
+    const valideur = await getValideur(demande.valide_par)
+    const valideurNom = valideur?.nom || 'l\'entreprise générale'
+    const valideurEmail = valideur?.email
+    const html = wrapper(`
+      ${header('Demande de livraison refusée', '#8B2020', '❌')}
+      <div style="padding:24px 28px">
+        <p style="color:#444;margin:0 0 16px;font-size:14px">
+          Bonjour <strong>${demande.prenom} ${demande.nom}</strong>,<br>
+          Votre demande de livraison a été <strong style="color:#8B2020">refusée</strong> par ${valideurNom}.
+        </p>
+        ${tableauDemande(demande)}
+        ${demande.commentaire_eg ? `
+        <div style="margin-top:20px;padding:16px 18px;background:#FBEAEA;border-left:4px solid #8B2020;border-radius:4px">
+          <strong style="color:#8B2020;font-size:13px">Motif du refus</strong>
+          <p style="color:#8B2020;margin:8px 0 0;font-size:13px">${demande.commentaire_eg}</p>
+        </div>` : ''}
+        <div style="margin-top:16px;padding:14px 18px;background:#f8f8f6;border-radius:4px">
+          <p style="color:#6b6860;margin:0;font-size:13px">
+            Vous pouvez soumettre une nouvelle demande en vous connectant à PIC Chantier.<br>
+            Pour toute question, contactez ${valideurNom}${valideurEmail ? ` à <a href="mailto:${valideurEmail}">${valideurEmail}</a>` : ''}.
+          </p>
         </div>
-        <div style="background:#fff;padding:24px;border:1px solid #ddd;border-top:none;border-radius:0 0 8px 8px">
-          <p style="color:#333;margin:0 0 16px">Bonjour <strong>${demande.prenom} ${demande.nom}</strong>,</p>
-          <p style="color:#6b6860;margin:0 0 16px">Votre demande de livraison a été <strong style="color:#8B2020">refusée</strong>.</p>
-          ${tableauDemande(demande)}
-          ${demande.commentaire_eg ? `
-          <div style="margin-top:20px;padding:14px 18px;background:#FBEAEA;border-left:4px solid #8B2020;border-radius:4px">
-            <strong style="color:#8B2020">Motif du refus</strong>
-            <p style="color:#8B2020;margin:6px 0 0;font-size:13px">${demande.commentaire_eg}</p>
-          </div>` : ''}
-          <p style="color:#6b6860;margin-top:16px;font-size:13px">Vous pouvez soumettre une nouvelle demande en vous connectant au site.</p>
+      </div>
+    `)
+    await sendMail(demande.email_demandeur, `[PIC Chantier] ❌ Demande refusée – ${demande.date_souhaitee} – ${demande.zone_nom}`, html, valideurEmail)
+  }
+
+  // ── ANNULATION → ST ───────────────────────────────────
+  if (type === 'annulation_st') {
+    const valideur = await getValideur(demande.valide_par)
+    const valideurNom = valideur?.nom || 'l\'entreprise générale'
+    const valideurEmail = valideur?.email
+    const html = wrapper(`
+      ${header('Livraison annulée', '#854F0B', '⚠️')}
+      <div style="padding:24px 28px">
+        <p style="color:#444;margin:0 0 16px;font-size:14px">
+          Bonjour <strong>${demande.prenom} ${demande.nom}</strong>,<br>
+          Votre livraison précédemment validée a été <strong style="color:#854F0B">annulée</strong> par ${valideurNom}.
+        </p>
+        ${tableauDemande(demande)}
+        ${demande.commentaire_eg ? `
+        <div style="margin-top:20px;padding:16px 18px;background:#FDF0DC;border-left:4px solid #854F0B;border-radius:4px">
+          <strong style="color:#854F0B;font-size:13px">Motif de l'annulation</strong>
+          <p style="color:#854F0B;margin:8px 0 0;font-size:13px">${demande.commentaire_eg}</p>
+        </div>` : ''}
+        <div style="margin-top:16px;padding:14px 18px;background:#f8f8f6;border-radius:4px">
+          <p style="color:#6b6860;margin:0;font-size:13px">
+            Vous pouvez soumettre une nouvelle demande si nécessaire.<br>
+            Pour toute question, contactez ${valideurNom}${valideurEmail ? ` à <a href="mailto:${valideurEmail}">${valideurEmail}</a>` : ''}.
+          </p>
         </div>
-      </div>`
-    await sendMail(demande.email_demandeur, `[PIC Chantier] ❌ Demande refusée – ${demande.date_souhaitee}`, html)
+      </div>
+    `)
+    await sendMail(demande.email_demandeur, `[PIC Chantier] ⚠️ Livraison annulée – ${demande.date_souhaitee}`, html, valideurEmail)
   }
 
   return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
