@@ -116,8 +116,13 @@ export default function FormulaireModal({ zone, lots, onClose, onSubmit }) {
     })
     if (err) { setError('Erreur : ' + err.message); setLoading(false); return }
 
-    await supabase.functions.invoke('send-email', {
-      body: { type: 'alerte_eg', demande: { zone_nom: zone.nom, ...form } }
+    await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ type: 'alerte_eg', demande: { zone_nom: zone.nom, ...form } })
     }).catch(() => {})
 
     setLoading(false)

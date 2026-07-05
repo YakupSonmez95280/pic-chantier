@@ -39,8 +39,13 @@ function Row({ d, onAction, profile }) {
     }
     if (statut === 'validee' || statut === 'refusee' || statut === 'annulee') {
       const type = statut === 'validee' ? 'validation_st' : statut === 'refusee' ? 'refus_st' : 'annulation_st'
-      await supabase.functions.invoke('send-email', {
-        body: { type, demande: { ...d, commentaire_eg: commentaire, valide_par: profile.id } }
+      await fetch(`${process.env.REACT_APP_SUPABASE_URL}/functions/v1/send-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.REACT_APP_SUPABASE_ANON_KEY}`,
+        },
+        body: JSON.stringify({ type, demande: { ...d, commentaire_eg: commentaire, valide_par: profile.id } })
       }).catch(() => {})
     }
     setLoading(false); setShowRefus(false); onAction()
