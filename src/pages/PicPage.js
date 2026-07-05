@@ -3,17 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../App'
 import { Upload, Plus, Trash2, CheckCircle, X, Maximize2, Minimize2 } from 'lucide-react'
 
-const LOTS_DEFAUT = ['Gros œuvre','Charpente / Couverture','Façade / Isolation','Électricité','Plomberie / CVC','Menuiseries extérieures','Menuiseries intérieures','Peinture / Revêtements','Carrelage / Sols','Serrurerie / Métallerie','Ascenseurs','Espaces verts','Autre']
-const CRENEAUX   = ['6h00–8h00','8h00–10h00','10h00–12h00','12h00–14h00','14h00–16h00','16h00–18h00']
+import FormulaireModal from '../components/FormulaireModal'
 
-function inp(extra) {
-  return {
-    width:'100%', padding:'10px 13px',
-    border:'1.5px solid var(--border)', borderRadius:'var(--r)',
-    fontSize:14, outline:'none', color:'var(--text)',
-    background:'var(--bg)', fontFamily:'inherit', ...extra
-  }
-}
+const LOTS_DEFAUT = ['Gros œuvre','Charpente / Couverture','Façade / Isolation','Électricité','Plomberie / CVC','Menuiseries extérieures','Menuiseries intérieures','Peinture / Revêtements','Carrelage / Sols','Serrurerie / Métallerie','Ascenseurs','Espaces verts','Autre']
 
 function ZoneBadge({ zone, scale, onClick, isEG, onDelete }) {
   const x = zone.x * scale
@@ -56,127 +48,6 @@ function ZoneBadge({ zone, scale, onClick, isEG, onDelete }) {
   )
 }
 
-function FormulaireModal({ zone, lots, onClose, onSubmit }) {
-  const { profile } = useAuth()
-  const [form, setForm] = useState({
-    entreprise: profile?.entreprise || '',
-    lot: lots[0] || LOTS_DEFAUT[0],
-    nom: profile?.nom || '',
-    prenom: profile?.prenom || '',
-    email_demandeur: profile?.email || '',
-    type_livraison: '',
-    date_souhaitee: '',
-    creneau: CRENEAUX[0],
-    quantite: '',
-    notes: '',
-  })
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const today = new Date().toISOString().split('T')[0]
-
-  const handleSubmit = async (e) => {
-    e.preventDefault()
-    if (!form.type_livraison || !form.date_souhaitee || !form.quantite) {
-      setError('Merci de remplir tous les champs obligatoires (*)'); return
-    }
-    setLoading(true); setError('')
-    const { error: err } = await supabase.from('demandes').insert({
-      zone_id: zone.id,
-      zone_nom: zone.nom,
-      ...form,
-      statut: 'en_attente',
-    })
-    if (err) { setError('Erreur : ' + err.message); setLoading(false); return }
-
-    await supabase.functions.invoke('send-email', {
-      body: { type: 'alerte_eg', demande: { zone_nom: zone.nom, ...form } }
-    }).catch(() => {})
-
-    setLoading(false)
-    onSubmit()
-  }
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:200, display:'flex', alignItems:'flex-end', justifyContent:'center' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ width:'100%', maxWidth:560, background:'var(--surface)', borderRadius:'16px 16px 0 0', padding:24, maxHeight:'90vh', overflowY:'auto' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <div>
-            <h2 style={{ fontSize:17, fontWeight:700 }}>Demande de livraison</h2>
-            <p style={{ fontSize:13, color:'var(--text2)' }}>Zone : <strong>{zone.nom}</strong></p>
-          </div>
-          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--text3)', display:'flex', cursor:'pointer' }}><X size={22}/></button>
-        </div>
-
-        {error && <div style={{ fontSize:13, color:'var(--red)', background:'var(--red-l)', padding:'10px 12px', borderRadius:8, marginBottom:14 }}>{error}</div>}
-
-        <form onSubmit={handleSubmit}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Entreprise *</label>
-              <input style={inp()} value={form.entreprise} onChange={e=>set('entreprise',e.target.value)} required/>
-            </div>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Lot *</label>
-              <select style={inp()} value={form.lot} onChange={e=>set('lot',e.target.value)}>
-                {(lots.length > 0 ? lots : LOTS_DEFAUT).map(l=><option key={l}>{l}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Prénom *</label>
-              <input style={inp()} value={form.prenom} onChange={e=>set('prenom',e.target.value)} required/>
-            </div>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Nom *</label>
-              <input style={inp()} value={form.nom} onChange={e=>set('nom',e.target.value)} required/>
-            </div>
-          </div>
-
-          <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Email *</label>
-            <input style={inp()} type="email" value={form.email_demandeur} onChange={e=>set('email_demandeur',e.target.value)} required/>
-          </div>
-
-          <div style={{ marginBottom:12 }}>
-            <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Type de livraison *</label>
-            <input style={inp()} value={form.type_livraison} onChange={e=>set('type_livraison',e.target.value)} placeholder="ex : Béton C25/30, Ferraillage HA12…" required/>
-          </div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:12 }}>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Date *</label>
-              <input style={inp()} type="date" value={form.date_souhaitee} min={today} onChange={e=>set('date_souhaitee',e.target.value)} required/>
-            </div>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Créneau *</label>
-              <select style={inp()} value={form.creneau} onChange={e=>set('creneau',e.target.value)}>
-                {CRENEAUX.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Quantité *</label>
-              <input style={inp()} value={form.quantite} onChange={e=>set('quantite',e.target.value)} placeholder="ex : 3 palettes…" required/>
-            </div>
-          </div>
-
-          <div style={{ marginBottom:18 }}>
-            <label style={{ fontSize:12, fontWeight:500, color:'var(--text2)', display:'block', marginBottom:4 }}>Remarques</label>
-            <textarea style={{ ...inp(), resize:'none' }} rows={2} value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="Informations complémentaires…"/>
-          </div>
-
-          <button type="submit" disabled={loading}
-            style={{ width:'100%', padding:13, background:'var(--green)', color:'#fff', border:'none', borderRadius:'var(--r)', fontSize:15, fontWeight:600, opacity:loading?0.7:1 }}>
-            {loading ? 'Envoi en cours…' : 'Envoyer la demande'}
-          </button>
-        </form>
-      </div>
-    </div>
-  )
-}
 
 export default function PicPage() {
   const { profile } = useAuth()
