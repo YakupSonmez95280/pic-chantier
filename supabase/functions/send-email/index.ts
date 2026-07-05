@@ -108,7 +108,18 @@ async function getValideur(validePar?: string): Promise<{ email: string; nom: st
   return null
 }
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-client-info, apikey',
+}
+
 serve(async (req) => {
+  // Répondre aux requêtes OPTIONS (preflight CORS)
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: CORS_HEADERS })
+  }
+
   try {
     const text = await req.text()
     if (!text || text.trim() === '') {
@@ -215,10 +226,10 @@ serve(async (req) => {
       await sendMail(demande.email_demandeur, `[PIC Chantier] ⚠️ Livraison annulée – ${demande.date_souhaitee}`, html, valideurNom)
     }
 
-    return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } })
 
   } catch (e) {
     console.error('Function error:', e)
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } })
   }
 })
