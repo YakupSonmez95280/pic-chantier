@@ -1,6 +1,6 @@
 import React from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Map, CalendarDays, ClipboardList, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Map, CalendarDays, ClipboardList, Settings, LogOut, ArrowLeftRight } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../App'
 
@@ -12,13 +12,14 @@ const ROLE_STYLE = {
 }
 
 export default function Layout() {
-  const { profile } = useAuth()
+  const { profile, chantier, setChantier } = useAuth()
   const nav = useNavigate()
   const isEG = profile?.role === 'eg'
   const isRT = profile?.role === 'rt'
   const canValidate = isEG || isRT
 
   const logout = async () => { await supabase.auth.signOut(); nav('/login') }
+  const switchChantier = () => { setChantier(null); nav('/chantiers') }
 
   const links = [
     { to: '/',        icon: <LayoutDashboard size={20}/>, label: 'Accueil',  exact: true },
@@ -32,19 +33,28 @@ export default function Layout() {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', minHeight:'100vh', maxWidth:780, margin:'0 auto' }}>
-
       <header style={{ position:'sticky', top:0, zIndex:50, background:'var(--surface)', borderBottom:'1px solid var(--border)', padding:'0 16px', display:'flex', alignItems:'center', justifyContent:'space-between', height:52 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <div style={{ width:30, height:30, background:'var(--green)', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+          <div style={{ width:30, height:30, background:'var(--green)', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <Map size={16} color="#fff" />
           </div>
-          <span style={{ fontWeight:700, fontSize:16, letterSpacing:'-0.3px' }}>PIC Chantier</span>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontWeight:700, fontSize:15, letterSpacing:'-0.3px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {chantier?.nom || 'PIC Chantier'}
+            </div>
+            {isEG && chantier && (
+              <button onClick={switchChantier}
+                style={{ fontSize:11, color:'var(--green)', background:'none', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', gap:3 }}>
+                <ArrowLeftRight size={10}/> Changer de chantier
+              </button>
+            )}
+          </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
           <span style={{ fontSize:12, fontWeight:600, padding:'3px 9px', borderRadius:'var(--r-full)', background: roleStyle.bg, color: roleStyle.color, textTransform:'uppercase', letterSpacing:'0.3px' }}>
             {ROLE_LABEL[profile?.role] || 'ST'}
           </span>
-          <span style={{ fontSize:13, color:'var(--text2)' }}>{profile?.prenom} {profile?.nom}</span>
+          <span style={{ fontSize:13, color:'var(--text2)', display:'none' }}>{profile?.prenom}</span>
           <button onClick={logout} title="Déconnexion" style={{ background:'none', border:'none', color:'var(--text3)', display:'flex', padding:4, borderRadius:6 }}>
             <LogOut size={16}/>
           </button>
