@@ -17,7 +17,15 @@ export default function ChantierSelect() {
       .then(({ data }) => setChantiers(data || []))
   }, [])
 
-  const creer = async (e) => {
+  const [editId, setEditId]   = useState(null)
+  const [editNom, setEditNom] = useState('')
+
+  const renommer = async (id) => {
+    if (!editNom.trim()) return
+    await supabase.from('chantiers').update({ nom: editNom.trim() }).eq('id', id)
+    setChantiers(prev => prev.map(c => c.id === id ? { ...c, nom: editNom.trim() } : c))
+    setEditId(null); setEditNom('')
+  }
     e.preventDefault()
     if (!form.nom.trim()) return
     setLoading(true)
@@ -69,22 +77,40 @@ export default function ChantierSelect() {
           </div>
         ) : (
           <div style={{ marginBottom:16 }}>
-            {chantiers.map(c => (
-              <div key={c.id} onClick={() => choisir(c)}
-                style={{ background:'var(--surface)', borderRadius:12, padding:'16px 18px', marginBottom:10, cursor:'pointer', boxShadow:'var(--shadow)', display:'flex', alignItems:'center', gap:12, transition:'transform 0.1s' }}
-                onMouseEnter={e => e.currentTarget.style.transform='translateX(3px)'}
-                onMouseLeave={e => e.currentTarget.style.transform=''}>
-                <div style={{ width:40, height:40, background:'var(--green-l)', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                  <Map size={18} color="var(--green)"/>
-                </div>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontWeight:700, fontSize:16 }}>{c.nom}</div>
-                  {c.adresse && <div style={{ fontSize:13, color:'var(--text2)', marginTop:2 }}>{c.adresse}</div>}
-                  {c.description && <div style={{ fontSize:12, color:'var(--text3)', marginTop:2 }}>{c.description}</div>}
-                </div>
-                <ChevronRight size={18} color="var(--text3)"/>
+        {chantiers.map(c => (
+          <div key={c.id}
+            style={{ background:'var(--surface)', borderRadius:12, padding:'16px 18px', marginBottom:10, boxShadow:'var(--shadow)' }}>
+            {editId === c.id ? (
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <input autoFocus value={editNom} onChange={e=>setEditNom(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&renommer(c.id)}
+                  style={{ flex:1, padding:'9px 12px', border:'1.5px solid var(--green)', borderRadius:8, fontSize:14, outline:'none', color:'var(--text)', background:'var(--bg)', fontFamily:'inherit' }}/>
+                <button onClick={()=>renommer(c.id)}
+                  style={{ padding:'9px 14px', background:'var(--green)', color:'#fff', border:'none', borderRadius:8, fontWeight:600, fontSize:13, cursor:'pointer' }}>✓</button>
+                <button onClick={()=>{setEditId(null);setEditNom('')}}
+                  style={{ padding:'9px 12px', background:'var(--surface2)', color:'var(--text)', border:'1px solid var(--border)', borderRadius:8, fontWeight:600, fontSize:13, cursor:'pointer' }}>✕</button>
               </div>
-            ))}
+            ) : (
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <div onClick={() => choisir(c)} style={{ display:'flex', alignItems:'center', gap:12, flex:1, cursor:'pointer' }}
+                  onMouseEnter={e=>e.currentTarget.style.opacity='0.8'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+                  <div style={{ width:40, height:40, background:'var(--green-l)', borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <Map size={18} color="var(--green)"/>
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:700, fontSize:16 }}>{c.nom}</div>
+                    {c.adresse && <div style={{ fontSize:13, color:'var(--text2)', marginTop:2 }}>{c.adresse}</div>}
+                  </div>
+                  <ChevronRight size={18} color="var(--text3)"/>
+                </div>
+                <button onClick={()=>{setEditId(c.id);setEditNom(c.nom)}}
+                  style={{ padding:'7px 10px', background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:8, fontSize:12, cursor:'pointer', color:'var(--text2)', flexShrink:0 }}>
+                  ✏️ Renommer
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
           </div>
         )}
 
